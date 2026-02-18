@@ -115,7 +115,8 @@ async def timeout_handler(context: ContextTypes.DEFAULT_TYPE):
     if cid in rooms and rooms[cid]['active']:
         room = rooms[cid]
         p_id = room['players'][room['turn']]
-        await context.bot.send_message(cid, f"⏰ <b>Waktu Habis!</b>\n<b>{room['player_names'][p_id]}</b> dilewati karena tidak menjawab!", parse_mode=ParseMode.HTML)
+        p_name = room['player_names'].get(p_id, "Pemain")
+        await context.bot.send_message(cid, f"⏰ <b>Waktu Habis!</b>\n{p_name} dilewati karena tidak menjawab dalam 45 detik!", parse_mode=ParseMode.HTML)
         room['turn'] = (room['turn'] + 1) % len(room['players'])
         await next_turn_msg(context, cid)
 
@@ -130,7 +131,7 @@ async def next_turn_msg(context, cid):
         for j in context.job_queue.get_jobs_by_name(f"timer_{cid}"): j.schedule_removal()
         context.job_queue.run_once(timeout_handler, 45, chat_id=cid, name=f"timer_{cid}")
 
-# --- COMMAND HANDLERS ---
+# --- GENERAL COMMANDS ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if update.effective_chat.type == Chat.PRIVATE:
@@ -149,6 +150,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "- /usir - mengusir pemain pasif\n"
             "- /donasi - berdonasi untuk bot\n"
             "- /help - bantuan")
+    
     kb = [[InlineKeyboardButton("➕ Masukkan Ke Grup", url=f"https://t.me/{context.bot.username}?startgroup=start")],
           [InlineKeyboardButton("👨‍💻 Developer", url=f"tg://user?id={OWNER_ID}"), InlineKeyboardButton("⚡ Support", url="https://t.me/bungkata")]]
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
@@ -174,7 +176,7 @@ async def peraturan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• 👑 121-140 Grand Master: 8 Huruf\n"
             "• 🇮🇩 141+ WNI: 9 Huruf\n\n"
             "3. Wajib Reply pesan bot.\n"
-            "4. Salah = Giliran dilempar & Poin -5.\n"
+            "4. Salah = Giliran dilempar ke pemain berikutnya & Poin -5.\n"
             "5. Kata yang sudah digunakan kena limit 10 menit per-grup.\n"
             "6. Game Over = Jika salah 3x berturut-turut.")
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -182,6 +184,7 @@ async def peraturan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def donasi_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Saya Tidak Mempunyai Qris Pribadi Jika Ingin Berdonasi Silahkan Transfer Ke Dana / GOPAY / OVO ( 089678824963 )", parse_mode=ParseMode.HTML)
 
+# --- GAME PLAY COMMANDS ---
 async def gabung_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id; cid = update.effective_chat.id; room = rooms.get(cid)
     if not room: return await update.message.reply_text("❌ Tidak ada room aktif.")
@@ -203,7 +206,7 @@ async def keluar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def mulai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
-    if cid in rooms: return await update.message.reply_text("❌ Room sedang aktif!", parse_mode=ParseMode.HTML)
+    if cid in rooms: return await update.message.reply_text("❌ Game sedang berjalan di grup ini!", parse_mode=ParseMode.HTML)
     rooms[cid] = {'creator': update.effective_user.id, 'players': [update.effective_user.id], 'player_names': {update.effective_user.id: update.effective_user.first_name}, 'active': False, 'suffix': '', 'turn': 0, 'turn_count': 0, 'used_words': {}, 'mistakes': {}}
     kb = [[InlineKeyboardButton("🚪 Gabung", callback_data="join"), InlineKeyboardButton("🏃 Keluar", callback_data="leave")], [InlineKeyboardButton("▶️ Play", callback_data="play")]]
     await update.message.reply_text(f"🎮 <b>ROOM DIBUKA</b>\n\n1. {update.effective_user.first_name}", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
@@ -218,20 +221,24 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def usir_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room = rooms.get(update.effective_chat.id)
     if room and room['active']:
-        p_id = room['players'][room['turn']]; room['players'].pop(room['turn']); await update.message.reply_text("👋 <b>Pemain berhasil diusir!</b>", parse_mode=ParseMode.HTML)
+        p_id = room['players'][room['turn']]; p_name = room['player_names'].get(p_id, "Pemain")
+        room['players'].pop(room['turn']); await update.message.reply_text(f"👋 <b>{p_name}</b> diusir!", parse_mode=ParseMode.HTML)
         if len(room['players']) < 2: await finish_game(context, update.effective_chat.id)
         else: room['turn'] %= len(room['players']); await next_turn_msg(context, update.effective_chat.id)
 
 async def ganti_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room = rooms.get(update.effective_chat.id)
     if room and room['active'] and update.effective_user.id == room['players'][room['turn']]:
-        room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz"); await update.message.reply_text(f"🔄 HURUF BARU: <b>{room['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
+        room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz")
+        await update.message.reply_text(f"🔄 HURUF BARU: <b>{room['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = db_query("SELECT username, points FROM users ORDER BY points DESC LIMIT 10", fetchall=True)
-    txt = "🏆 <b>TOP 10 GLOBAL</b>\n" + "\n".join([f"{i+1}. {r[0]} - <code>{r[1]}</code> pts" for i,r in enumerate(res)])
+    txt = "🏆 <b>TOP 10 GLOBAL</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+    for i, r in enumerate(res): txt += f"{i+1}. {r[0]} — <code>{r[1]}</code> pts\n"
     await update.message.reply_text(txt, parse_mode=ParseMode.HTML)
 
+# --- ADMIN COMMANDS ---
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
     u = db_query("SELECT COUNT(*) FROM users", fetchone=True)[0]
@@ -242,13 +249,17 @@ async def edit_point(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
     try:
         t, op, v = context.args[0].replace("@",""), context.args[1], int(context.args[2])
-        db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE username=? OR id=?", (v, t, t), commit=True)
-        await update.message.reply_text("✅ Sukses!", parse_mode=ParseMode.HTML)
+        db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE username=? OR id=?", (v, t, t), commit=True); await update.message.reply_text("✅ Sukses!", parse_mode=ParseMode.HTML)
     except: await update.message.reply_text("Format: /e [user] [+ / -] [poin]", parse_mode=ParseMode.HTML)
+
+async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update.effective_user.id): return
+    kb = [[InlineKeyboardButton("✅ Ya", callback_data="confirm_reset"), InlineKeyboardButton("❌ Tidak", callback_data="cancel_reset")]]
+    await update.message.reply_text("⚠️ <b>RESET SELURUH POIN USER?</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
-    if not update.message.reply_to_message and not context.args: return await update.message.reply_text("❌ Pesan kosong!")
+    if not update.message.reply_to_message and not context.args: return await update.message.reply_text("❌ Pesan kosong!", parse_mode=ParseMode.HTML)
     is_group = "bcgroup" in update.message.text; targets = db_query("SELECT id FROM " + ("groups" if is_group else "users"), fetchall=True)
     s = 0
     for t in targets:
@@ -262,12 +273,58 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
     await update.message.reply_text(f"✅ Selesai disiarkan ke {s} target!", parse_mode=ParseMode.HTML)
 
+# --- GAME LOGIC ---
+async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    u = update.effective_user; cid = update.effective_chat.id; room = rooms.get(cid)
+    if not update.message or not update.message.text or update.message.text.startswith('/') or not room or not room['active']: return
+    if not update.message.reply_to_message or update.message.reply_to_message.from_user.id != context.bot.id: return
+    if u.id != room['players'][room['turn']]: return
+    
+    word = update.message.text.strip().lower(); tc = room['turn_count']
+    if word in room['used_words'] and datetime.now() < room['used_words'][word]:
+        return await update.message.reply_text(f"❌ Kata '{word.upper()}' limit 10 menit di grup ini!", parse_mode=ParseMode.HTML)
+    
+    if tc <= 20: min_l, lv = 2, "🟢 Easy"
+    elif tc <= 40: min_l, lv = 3, "🟡 Medium"
+    elif tc <= 60: min_l, lv = 4, "🔴 Hard"
+    elif tc <= 80: min_l, lv = 5, "🟣 Super Hard"
+    elif tc <= 100: min_l, lv = 6, "💎 Epic"
+    elif tc <= 120: min_l, lv = 7, "🏆 Master"
+    elif tc <= 140: min_l, lv = 8, "👑 Grand Master"
+    else: min_l, lv = 9, "🇮🇩WNI🇮🇩"
+
+    err = ""
+    if word in BANNED_NAMES: err = "❌ Larangan: Nama manusia!"
+    elif len(word) < min_l: err = f"❌ Minimal {min_l} huruf!"
+    elif word not in dictionary: err = "❌ Tidak ada di kamus!"
+    elif room['suffix'] and not word.startswith(room['suffix']): err = f"❌ Harus mulai dengan: {room['suffix'].upper()}!"
+    
+    if err:
+        update_points(u.id, u.first_name, -5); room['mistakes'][u.id] = room['mistakes'].get(u.id, 0) + 1
+        if room['mistakes'][u.id] >= 3:
+            await update.message.reply_text(f"💀 <b>GAME OVER!</b>\n{u.first_name} kalah! (Poin -5)", parse_mode=ParseMode.HTML)
+            room['players'].pop(room['turn'])
+            if len(room['players']) < 2: return await finish_game(context, cid)
+            room['turn'] %= len(room['players'])
+        else:
+            await update.message.reply_text(f"{err}\nPoin -5. Dilempar! ({room['mistakes'][u.id]}/3)", parse_mode=ParseMode.HTML)
+            room['turn'] = (room['turn'] + 1) % len(room['players'])
+        return await next_turn_msg(context, cid)
+
+    room['mistakes'][u.id] = 0; room['used_words'][word] = datetime.now() + timedelta(minutes=10)
+    room['suffix'] = word[-3:] if len(word) >= 7 else word[-2:]; room['turn_count'] += 1
+    room['turn'] = (room['turn'] + 1) % len(room['players']); update_points(u.id, u.first_name, 10)
+    await update.message.reply_text(f"✅ <b>BENAR!</b>\nLv: {lv}\nPoint: +10", parse_mode=ParseMode.HTML); await next_turn_msg(context, cid)
+
 # --- SETTINGS MENU ---
 async def send_settings_menu(upd, ctx):
     text = f"⚙️ <b>SETTINGS FSUB</b>\n\nStatus: {get_setting('fsub_status').upper()}\nID: <code>{get_setting('fsub_id')}</code>\nLink: {get_setting('fsub_link')}\nBtn: {get_setting('fsub_btn')}"
     kb = [[InlineKeyboardButton("Toggle Status", callback_data="st_toggle")], [InlineKeyboardButton("Edit ID", callback_data="st_id"), InlineKeyboardButton("Edit Link", callback_data="st_link")], [InlineKeyboardButton("Edit Tombol", callback_data="st_btn")], [InlineKeyboardButton("❌ Tutup", callback_data="st_close")]]
     if isinstance(upd, Update): await upd.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
     else: await upd.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+
+async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_owner(update.effective_user.id): await send_settings_menu(update, context)
 
 # --- CALLBACK LOGIC ---
 async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -295,51 +352,15 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_settings_menu(q, context)
     elif q.data.startswith("st_"):
         if q.data == "st_close": await q.message.delete()
-        else: context.user_data['edit'] = q.data.split("_")[1]; await q.edit_message_text("Kirim nilai baru (atau Klik Batal):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="st_back")]]), parse_mode=ParseMode.HTML)
+        else: context.user_data['edit'] = q.data.split("_")[1]; await q.edit_message_text("Kirim nilai baru (atau klik Batal):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="st_back")]]), parse_mode=ParseMode.HTML)
     elif q.data == "st_back": 
-        context.user_data.pop('edit', None)
-        await send_settings_menu(q, context)
+        context.user_data.pop('edit', None); await send_settings_menu(q, context)
     elif q.data == "confirm_reset":
-        db_query("UPDATE users SET points = 0", commit=True); await q.edit_message_text("✅ Seluruh poin telah direset ke 0!", parse_mode=ParseMode.HTML)
-    elif q.data == "cancel_reset": await q.edit_message_text("❌ Reset dibatalkan.")
+        db_query("UPDATE users SET points = 0", commit=True); await q.edit_message_text("✅ Reset Poin Seluruh User Sukses!", parse_mode=ParseMode.HTML)
+    elif q.data == "cancel_reset": await q.edit_message_text("❌ Reset dibatalkan.", parse_mode=ParseMode.HTML)
     elif q.data == "check_fsub_again":
         if await check_fsub(uid, context): await q.message.delete()
         else: await q.answer("Belum join!", show_alert=True)
-
-async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    u = update.effective_user; cid = update.effective_chat.id; room = rooms.get(cid)
-    if not update.message or not update.message.text or update.message.text.startswith('/') or not room or not room['active']: return
-    if not update.message.reply_to_message or update.message.reply_to_message.from_user.id != context.bot.id: return
-    if u.id != room['players'][room['turn']]: return
-    word = update.message.text.strip().lower(); tc = room['turn_count']
-    if word in room['used_words'] and datetime.now() < room['used_words'][word]:
-        return await update.message.reply_text(f"❌ Kata '{word.upper()}' limit 10 menit di grup ini!", parse_mode=ParseMode.HTML)
-    if tc <= 20: ml, lv = 2, "Easy"
-    elif tc <= 40: ml, lv = 3, "Medium"
-    elif tc <= 60: ml, lv = 4, "Hard"
-    elif tc <= 80: ml, lv = 5, "Super Hard"
-    elif tc <= 100: ml, lv = 6, "Epic"
-    elif tc <= 120: ml, lv = 7, "Master"
-    elif tc <= 140: ml, lv = 8, "Grand Master"
-    else: ml, lv = 9, "WNI"
-    err = ""
-    if word in BANNED_NAMES: err = "❌ Larangan: Nama!"
-    elif len(word) < ml: err = f"❌ Minimal {ml} huruf!"
-    elif word not in dictionary: err = "❌ Tidak ada di kamus!"
-    elif room['suffix'] and not word.startswith(room['suffix']): err = f"❌ Harus mulai dengan: {room['suffix'].upper()}!"
-    if err:
-        update_points(u.id, u.first_name, -5); room['mistakes'][u.id] = room['mistakes'].get(u.id, 0) + 1
-        if room['mistakes'][u.id] >= 3:
-            await update.message.reply_text(f"💀 <b>GAME OVER!</b>\n{u.first_name} kalah! (Poin -5)"); room['players'].pop(room['turn'])
-            if len(room['players']) < 2: return await finish_game(context, cid)
-            room['turn'] %= len(room['players'])
-        else:
-            await update.message.reply_text(f"{err}\nPoin -5. Dilempar! ({room['mistakes'][u.id]}/3)"); room['turn'] = (room['turn'] + 1) % len(room['players'])
-        return await next_turn_msg(context, cid)
-    room['mistakes'][u.id] = 0; room['used_words'][word] = datetime.now() + timedelta(minutes=10)
-    room['suffix'] = word[-3:] if len(word) >= 7 else word[-2:]; room['turn_count'] += 1
-    room['turn'] = (room['turn'] + 1) % len(room['players']); update_points(u.id, u.first_name, 10)
-    await update.message.reply_text(f"✅ <b>BENAR!</b>\nLv: {lv}\nPoint: +10", parse_mode=ParseMode.HTML); await next_turn_msg(context, cid)
 
 async def settings_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id) or 'edit' not in context.user_data: return
@@ -362,13 +383,13 @@ def main():
     app.add_handler(CommandHandler("bcuser", broadcast_cmd))
     app.add_handler(CommandHandler("bcgroup", broadcast_cmd))
     app.add_handler(CommandHandler("e", edit_point))
+    app.add_handler(CommandHandler("reset", reset_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("reset", lambda u,c: u.message.reply_text("⚠️ <b>RESET POIN USER?</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Ya", callback_data="confirm_reset"), InlineKeyboardButton("❌ Tidak", callback_data="cancel_reset")]]), parse_mode=ParseMode.HTML) if is_owner(u.effective_user.id) else None))
-    app.add_handler(CommandHandler("settings", lambda u,c: send_settings_menu(u,c) if is_owner(u.effective_user.id) else None))
+    app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CallbackQueryHandler(cb_logic))
     app.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, settings_input))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all))
-    print(">>> ONLINE <<<"); app.run_polling()
+    print(">>> BOT READY <<<"); app.run_polling()
 
 if __name__ == '__main__': main()
