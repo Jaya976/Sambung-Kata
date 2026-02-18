@@ -207,28 +207,45 @@ async def keluar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mulai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
     if cid in rooms: return await update.message.reply_text("❌ Game sedang berjalan di grup ini!", parse_mode=ParseMode.HTML)
-    rooms[cid] = {'creator': update.effective_user.id, 'players': [update.effective_user.id], 'player_names': {update.effective_user.id: update.effective_user.first_name}, 'active': False, 'suffix': '', 'turn': 0, 'turn_count': 0, 'used_words': {}, 'mistakes': {}}
+    rooms[cid] = {
+        'creator': update.effective_user.id, 
+        'players': [update.effective_user.id], 
+        'player_names': {update.effective_user.id: update.effective_user.first_name}, 
+        'active': False, 
+        'suffix': '', 
+        'turn': 0, 
+        'turn_count': 0, 
+        'used_words': {}, 
+        'mistakes': {},
+        'ganti_limit': {} # Tracking ganti per user
+    }
     kb = [[InlineKeyboardButton("🚪 Gabung", callback_data="join"), InlineKeyboardButton("🏃 Keluar", callback_data="leave")], [InlineKeyboardButton("▶️ Play", callback_data="play")]]
     await update.message.reply_text(f"🎮 <b>ROOM DIBUKA</b>\n\n1. {update.effective_user.first_name}", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    room = rooms.get(update.effective_chat.id)
+    cid = update.effective_chat.id; room = rooms.get(cid)
     if room:
-        m = await context.bot.get_chat_member(update.effective_chat.id, update.effective_user.id)
-        if is_owner(update.effective_user.id) or update.effective_user.id == room['creator'] or m.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            await finish_game(context, update.effective_chat.id)
+        if update.effective_user.id == room['creator'] or is_owner(update.effective_user.id):
+            await finish_game(context, cid)
+        else:
+            await update.message.reply_text("❌ Hanya Leader (pembuat room) yang bisa menghentikan permainan!", parse_mode=ParseMode.HTML)
 
 async def usir_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    room = rooms.get(update.effective_chat.id)
+    cid = update.effective_chat.id; room = rooms.get(cid)
     if room and room['active']:
         p_id = room['players'][room['turn']]; p_name = room['player_names'].get(p_id, "Pemain")
-        room['players'].pop(room['turn']); await update.message.reply_text(f"👋 <b>{p_name}</b> diusir!", parse_mode=ParseMode.HTML)
-        if len(room['players']) < 2: await finish_game(context, update.effective_chat.id)
-        else: room['turn'] %= len(room['players']); await next_turn_msg(context, update.effective_chat.id)
+        room['players'].pop(room['turn'])
+        await update.message.reply_text(f"👋 <b>{p_name}</b> diusir karena pasif!", parse_mode=ParseMode.HTML)
+        if len(room['players']) < 2: await finish_game(context, cid)
+        else: room['turn'] %= len(room['players']); await next_turn_msg(context, cid)
 
 async def ganti_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    room = rooms.get(update.effective_chat.id)
-    if room and room['active'] and update.effective_user.id == room['players'][room['turn']]:
+    uid = update.effective_user.id; cid = update.effective_chat.id; room = rooms.get(cid)
+    if room and room['active'] and uid == room['players'][room['turn']]:
+        if room['ganti_limit'].get(uid, 0) >= 1:
+            return await update.message.reply_text("❌ Kamu sudah menggunakan jatah /ganti (Limit 1x)!", parse_mode=ParseMode.HTML)
+        
+        room['ganti_limit'][uid] = 1
         room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz")
         await update.message.reply_text(f"🔄 HURUF BARU: <b>{room['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
@@ -249,7 +266,8 @@ async def edit_point(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
     try:
         t, op, v = context.args[0].replace("@",""), context.args[1], int(context.args[2])
-        db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE username=? OR id=?", (v, t, t), commit=True); await update.message.reply_text("✅ Sukses!", parse_mode=ParseMode.HTML)
+        db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE username=? OR id=?", (v, t, t), commit=True)
+        await update.message.reply_text(f"✅ Sukses edit poin {t}!", parse_mode=ParseMode.HTML)
     except: await update.message.reply_text("Format: /e [user] [+ / -] [poin]", parse_mode=ParseMode.HTML)
 
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -281,8 +299,13 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if u.id != room['players'][room['turn']]: return
     
     word = update.message.text.strip().lower(); tc = room['turn_count']
+    
+    # PENALTI KATA LIMIT (-10 POIN & LEMPAR GILIRAN)
     if word in room['used_words'] and datetime.now() < room['used_words'][word]:
-        return await update.message.reply_text(f"❌ Kata '{word.upper()}' limit 10 menit di grup ini!", parse_mode=ParseMode.HTML)
+        update_points(u.id, u.first_name, -10)
+        room['turn'] = (room['turn'] + 1) % len(room['players'])
+        await update.message.reply_text(f"❌ Kata <b>{word.upper()}</b> limit 10 menit! Poin -10 & Giliran dilempar.", parse_mode=ParseMode.HTML)
+        return await next_turn_msg(context, cid)
     
     if tc <= 20: min_l, lv = 2, "🟢 Easy"
     elif tc <= 40: min_l, lv = 3, "🟡 Medium"
@@ -323,9 +346,6 @@ async def send_settings_menu(upd, ctx):
     if isinstance(upd, Update): await upd.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
     else: await upd.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
-async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_owner(update.effective_user.id): await send_settings_menu(update, context)
-
 # --- CALLBACK LOGIC ---
 async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query; uid = q.from_user.id; cid = q.message.chat_id; room = rooms.get(cid)
@@ -354,7 +374,8 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if q.data == "st_close": await q.message.delete()
         else: context.user_data['edit'] = q.data.split("_")[1]; await q.edit_message_text("Kirim nilai baru (atau klik Batal):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="st_back")]]), parse_mode=ParseMode.HTML)
     elif q.data == "st_back": 
-        context.user_data.pop('edit', None); await send_settings_menu(q, context)
+        context.user_data.pop('edit', None)
+        await send_settings_menu(q, context)
     elif q.data == "confirm_reset":
         db_query("UPDATE users SET points = 0", commit=True); await q.edit_message_text("✅ Reset Poin Seluruh User Sukses!", parse_mode=ParseMode.HTML)
     elif q.data == "cancel_reset": await q.edit_message_text("❌ Reset dibatalkan.", parse_mode=ParseMode.HTML)
@@ -385,11 +406,11 @@ def main():
     app.add_handler(CommandHandler("e", edit_point))
     app.add_handler(CommandHandler("reset", reset_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("settings", settings_cmd))
+    app.add_handler(CommandHandler("settings", lambda u,c: send_settings_menu(u,c) if is_owner(u.effective_user.id) else None))
     app.add_handler(CallbackQueryHandler(cb_logic))
     app.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE & ~filters.COMMAND, settings_input))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all))
-    print(">>> BOT READY <<<"); app.run_polling()
+    print(">>> BOT PROFESSIONAL ONLINE <<<"); app.run_polling()
 
 if __name__ == '__main__': main()
