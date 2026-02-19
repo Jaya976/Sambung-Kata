@@ -340,7 +340,9 @@ async def send_settings_menu(upd, ctx):
     text = f"⚙️ <b>SETTINGS FSUB</b>\n\nStatus: {get_setting('fsub_status').upper()}\nID: <code>{get_setting('fsub_id')}</code>\nLink: {get_setting('fsub_link')}\nBtn: {get_setting('fsub_btn')}"
     kb = [[InlineKeyboardButton("Toggle Status", callback_data="st_toggle")], [InlineKeyboardButton("Edit ID", callback_data="st_id"), InlineKeyboardButton("Edit Link", callback_data="st_link")], [InlineKeyboardButton("Edit Tombol", callback_data="st_btn")], [InlineKeyboardButton("❌ Tutup", callback_data="st_close")]]
     if isinstance(upd, Update): await upd.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
-    else: await upd.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    else: 
+        try: await upd.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+        except: pass
 
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_owner(update.effective_user.id): await send_settings_menu(update, context)
@@ -350,7 +352,10 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query; uid = q.from_user.id; cid = q.message.chat_id; room = rooms.get(cid)
     if q.data == "join":
         if room and not room['active'] and uid not in room['players']:
-            if not await check_fsub(uid, context): return await q.answer("Join channel dulu!", show_alert=True)
+            if not await check_fsub(uid, context): 
+                try: await q.answer("Join channel dulu!", show_alert=True)
+                except: pass
+                return
             room['players'].append(uid); room['player_names'][uid] = q.from_user.first_name
             plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])])
             try: await q.edit_message_text(f"🎮 <b>ROOM DIBUKA</b>\n\nBersiap:\n{plist}", reply_markup=q.message.reply_markup, parse_mode=ParseMode.HTML)
@@ -362,8 +367,14 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except: pass
     elif q.data == "play":
         if room:
-            if uid != room['creator']: return await q.answer("🙏Kamu Bukan Leader", show_alert=True)
-            if len(room['players']) < 2: return await q.answer("Minimal 2 pemain!", show_alert=True)
+            if uid != room['creator']: 
+                try: await q.answer("🙏Kamu Bukan Leader", show_alert=True)
+                except: pass
+                return
+            if len(room['players']) < 2: 
+                try: await q.answer("Minimal 2 pemain!", show_alert=True)
+                except: pass
+                return
             room['active'] = True; room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz")
             await q.message.delete(); await next_turn_msg(context, cid)
     elif q.data == "st_toggle":
@@ -371,7 +382,10 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_settings_menu(q, context)
     elif q.data.startswith("st_"):
         if q.data == "st_close": await q.message.delete()
-        else: context.user_data['edit'] = q.data.split("_")[1]; await q.edit_message_text("Kirim nilai baru (atau klik Batal):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="st_back")]]), parse_mode=ParseMode.HTML)
+        else: 
+            context.user_data['edit'] = q.data.split("_")[1]
+            try: await q.edit_message_text("Kirim nilai baru (atau klik Batal):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="st_back")]]), parse_mode=ParseMode.HTML)
+            except: pass
     elif q.data == "st_back": 
         context.user_data.pop('edit', None)
         await send_settings_menu(q, context)
@@ -380,7 +394,9 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif q.data == "cancel_reset": await q.edit_message_text("❌ Reset dibatalkan.", parse_mode=ParseMode.HTML)
     elif q.data == "check_fsub_again":
         if await check_fsub(uid, context): await q.message.delete()
-        else: await q.answer("Belum join!", show_alert=True)
+        else: 
+            try: await q.answer("Belum join!", show_alert=True)
+            except: pass
 
 async def settings_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id) or 'edit' not in context.user_data: return
