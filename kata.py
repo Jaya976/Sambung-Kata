@@ -43,12 +43,10 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
         conn.close()
 
 def init_db():
-    # Tambahkan kolom max_tc untuk menyimpan rekor level tertinggi user
     db_query('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, points INTEGER DEFAULT 0, max_tc INTEGER DEFAULT 0)''', commit=True)
     db_query('''CREATE TABLE IF NOT EXISTS groups (id INTEGER PRIMARY KEY, title TEXT)''', commit=True)
     db_query('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''', commit=True)
     
-    # Update tabel lama jika kolom max_tc belum ada
     try:
         db_query("ALTER TABLE users ADD COLUMN max_tc INTEGER DEFAULT 0", commit=True)
     except:
@@ -88,9 +86,7 @@ def load_dictionary():
 
 dictionary = load_dictionary()
 
-# --- LOGIKA LEVEL DINAMIS ---
 def get_level_info(tc):
-    """Mengembalikan (Nama Level, Minimal Huruf, Emoji)"""
     if tc <= 20: return "Easy", 3, "🟢"
     elif tc <= 40: return "Medium", 4, "🟡"
     elif tc <= 60: return "Hard", 5, "🔴"
@@ -100,7 +96,7 @@ def get_level_info(tc):
     elif tc <= 140: return "Legend Kata", 9, "🏆"
     else: return "WNI (Warga Negara Indonesia)", 10, "🏅"
 
-# --- UTILS & GRUP LOGS PINTAR ---
+# --- UTILS ---
 def is_owner(user_id): return user_id == OWNER_ID
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -176,8 +172,6 @@ async def next_turn_msg(context, cid):
     next_p = room['players'][room['turn']]
     mention = f"<a href='tg://user?id={next_p}'>{room['player_names'][next_p]}</a>"
     suffix = room['suffix']
-    
-    # Ambil info level saat ini
     lvl_name, min_h, lvl_emo = get_level_info(room['turn_count'])
     
     try:
@@ -377,13 +371,11 @@ async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = db_query("SELECT username, points, max_tc FROM users ORDER BY points DESC LIMIT 10", fetchall=True)
     txt = "🏆 <b>TOP 10 GLOBAL PLAYERS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
     for i, r in enumerate(res): 
-        # Ambil emoji berdasarkan rekor max_tc user tersebut
         _, _, emo = get_level_info(r[2])
         txt += f"{i+1}. {emo} {r[0]} — <code>{r[1]}</code> pts\n"
     kb = [[InlineKeyboardButton("📈 Score Saya", callback_data="my_score")]]
     await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
-# --- BROADCAST PINTAR ---
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
     is_group = "bcgroup" in update.message.text
@@ -400,7 +392,6 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat = await context.bot.get_chat(t[0])
                     if chat.type == Chat.CHANNEL: continue 
                 except: pass
-            
             if msg: await msg.copy(t[0])
             else: await context.bot.send_message(t[0], text_val, parse_mode=ParseMode.HTML)
             s += 1
@@ -466,38 +457,43 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message: return
     u = update.effective_user; cid = update.effective_chat.id; room = rooms.get(cid)
     
-    # Input Admin untuk Settings
     if 'editing' in context.user_data and is_owner(u.id):
         if not update.message.text: return
         set_setting(context.user_data['editing'], update.message.text); context.user_data.clear()
         return await update.message.reply_text("✅ Berhasil disimpan! Gunakan /settings untuk melihat.", parse_mode=ParseMode.HTML)
 
-    # SOLO MODE LOGIC
+    # --- SOLO MODE LOGIC ---
     if update.effective_chat.type == Chat.PRIVATE and u.id in SOLO_ROOMS:
         if not update.message.text: return
         solo = SOLO_ROOMS[u.id]; word = update.message.text.strip().lower()
-        
-        # Cek Min Huruf Solo
         _, min_l_solo, _ = get_level_info(solo['turn_count'])
         
+        # Cek Kesalahan Solo
         if word in solo['used_words'] and datetime.now() < solo['used_words'][word]:
             return await update.message.reply_text("❌ Kata ini sudah digunakan! (Limit 30m)", parse_mode=ParseMode.HTML)
+        
         if word in BANNED_NAMES or word not in dictionary or not word.startswith(solo['suffix']) or len(word) < min_l_solo:
-            update_points(u.id, u.first_name, -1, solo['turn_count']); return await update.message.reply_text(f"❌ Salah! Min {min_l_solo} huruf. -1 Poin", parse_mode=ParseMode.HTML)
+            update_points(u.id, u.first_name, -1, solo['turn_count'])
+            err_txt = "❌ <b>JAWABAN SALAH!</b>\n"
+            if word in BANNED_NAMES: err_txt += "Alasan: Nama dilarang.\n"
+            elif len(word) < min_l_solo: err_txt += f"Alasan: Kurang dari {min_l_solo} huruf.\n"
+            elif word not in dictionary: err_txt += "Alasan: Tidak ada di Kamus.\n"
+            elif not word.startswith(solo['suffix']): err_txt += f"Alasan: Harus diawali '{solo['suffix'].upper()}'.\n"
+            err_txt += "📉 <b>Poin: -1</b>"
+            return await update.message.reply_text(err_txt, parse_mode=ParseMode.HTML)
         
+        # Benar Solo
         solo['used_words'][word] = datetime.now() + timedelta(minutes=30)
-        
-        # Logika Suffix Dinamis
+        s_len = 3 if len(word) >= 5 else 2
         if len(word) == 6: s_len = 2
         elif len(word) == 7: s_len = 3
         elif len(word) == 10: s_len = 4
-        else: s_len = 3 if len(word) >= 5 else 2
         
         solo['suffix'] = word[-s_len:]; solo['turn_count'] += 1
         update_points(u.id, u.first_name, 1, solo['turn_count'])
-        return await update.message.reply_text(f"✅ Benar! Sambung: <b>{solo['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
+        return await update.message.reply_text(f"✅ <b>JAWABAN BENAR!</b> (+1 Poin)\nSambung: <b>{solo['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
-    # GROUP MODE LOGIC
+    # --- GROUP MODE LOGIC ---
     if not room or not room['active'] or u.id != room['players'][room['turn']]: return
     if not update.message.reply_to_message or update.message.reply_to_message.from_user.id != context.bot.id: return
     if not update.message.text: return
@@ -506,41 +502,43 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if word in room['used_words'] and datetime.now() < room['used_words'][word]:
         return await update.message.reply_text("❌ Kata ini sudah digunakan di grup ini! (Limit 30m)", parse_mode=ParseMode.HTML)
 
-    # Get Level Info
     lvl_name, min_l, lvl_emo = get_level_info(tc)
 
-    # LOGIKA SALAH: Poin Berkurang & Lempar Giliran
+    # --- LOGIKA SALAH (GRUP) ---
     if word in BANNED_NAMES or len(word) < min_l or word not in dictionary or (room['suffix'] and not word.startswith(room['suffix'])):
         update_points(u.id, u.first_name, -5, tc)
         room['mistakes'][u.id] = room['mistakes'].get(u.id, 0) + 1
         
-        err_msg = "❌ Jawaban Salah!"
-        if word in BANNED_NAMES: err_msg = "❌ Larangan: Nama orang!"
-        elif len(word) < min_l: err_msg = f"❌ Minimal {min_l} huruf untuk level {lvl_name}!"
-        elif word not in dictionary: err_msg = "❌ Tidak ada di kamus!"
-        elif not word.startswith(room['suffix']): err_msg = f"❌ Harus diawali '{room['suffix'].upper()}'!"
+        err_msg = "❌ <b>JAWABAN SALAH!</b>\n"
+        if word in BANNED_NAMES: err_msg += "Detail: Dilarang menggunakan nama orang!\n"
+        elif len(word) < min_l: err_msg += f"Detail: Minimal {min_l} huruf untuk level {lvl_name}!\n"
+        elif word not in dictionary: err_msg += "Detail: Kata tidak ditemukan di kamus resmi!\n"
+        elif not word.startswith(room['suffix']): err_msg += f"Detail: Harus diawali huruf '{room['suffix'].upper()}'!\n"
+        err_msg += "📉 <b>Poin: -5</b>"
 
         if room['mistakes'][u.id] >= 3:
             await update.message.reply_text(f"💀 {u.first_name} tereliminasi! (Salah 3x)", parse_mode=ParseMode.HTML)
             room['players'].pop(room['turn'])
             if len(room['players']) < 2: return await finish_game(context, cid)
         else:
-            await update.message.reply_text(f"{err_msg}\nPoin -5. Giliran dilempar!", parse_mode=ParseMode.HTML)
+            await update.message.reply_text(f"{err_msg}\n<i>Giliran dilempar ke pemain selanjutnya!</i>", parse_mode=ParseMode.HTML)
             room['turn'] = (room['turn'] + 1) % len(room['players'])
         
         return await next_turn_msg(context, cid)
 
-    # SUCCESS LOGIC
+    # --- LOGIKA BENAR (GRUP) ---
     room['used_words'][word] = datetime.now() + timedelta(minutes=30)
-    
-    # Logika Suffix Dinamis
+    s_len = 3 if len(word) >= 5 else 2
     if len(word) == 6: s_len = 2
     elif len(word) == 7: s_len = 3
     elif len(word) == 10: s_len = 4
-    else: s_len = 3 if len(word) >= 5 else 2
     
     room['suffix'] = word[-s_len:]; room['turn_count'] += 1; room['turn'] = (room['turn'] + 1) % len(room['players'])
-    update_points(u.id, u.first_name, 10, room['turn_count']); await next_turn_msg(context, cid)
+    update_points(u.id, u.first_name, 10, room['turn_count'])
+    
+    # Notifikasi Benar
+    await update.message.reply_text(f"✅ <b>JAWABAN BENAR!</b>\n{u.first_name} mendapatkan <b>+10 Poin</b>.", parse_mode=ParseMode.HTML)
+    await next_turn_msg(context, cid)
 
 def main():
     app = Application.builder().token(TOKEN).build()
