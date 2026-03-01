@@ -100,6 +100,10 @@ def get_level_info(tc):
 def is_owner(user_id): return user_id == OWNER_ID
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Mengabaikan error "Message is not modified" agar tidak spam log
+    if isinstance(context.error, BadRequest) and "Message is not modified" in str(context.error):
+        return
+        
     tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
     tb_string = "".join(tb_list)
     log_msg = (f"⚠️ <b>DETEKSI ERROR SISTEM</b>\n\n"
@@ -159,7 +163,6 @@ async def timeout_handler(context: ContextTypes.DEFAULT_TYPE):
     cid = context.job.chat_id
     if cid in rooms and rooms[cid]['active']:
         room = rooms[cid]
-        # Safety Check agar timeout tidak crash jika pemain sisa 0
         if not room['players']: return await finish_game(context, cid)
         
         p_id = room['players'][room['turn']]
@@ -174,9 +177,7 @@ async def next_turn_msg(context, cid):
     room = rooms[cid]
     if not room['players']: return await finish_game(context, cid)
     
-    # Pastikan turn tidak melebihi jumlah pemain saat ini
     room['turn'] %= len(room['players'])
-    
     next_p = room['players'][room['turn']]
     mention = f"<a href='tg://user?id={next_p}'>{room['player_names'][next_p]}</a>"
     suffix = room['suffix']
@@ -294,7 +295,7 @@ async def keluar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🏃 <b>{update.effective_user.first_name}</b> keluar.", parse_mode=ParseMode.HTML)
     if len(room['players']) < 2: await finish_game(context, cid)
     elif room['active']: 
-        room['turn'] %= len(room['players']) # Safety modulo
+        room['turn'] %= len(room['players'])
         if is_turn: await next_turn_msg(context, cid)
 
 async def mulai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -330,7 +331,7 @@ async def usir_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"👋 <b>{p_name}</b> diusir dari permainan!", parse_mode=ParseMode.HTML)
         if len(room['players']) < 2: await finish_game(context, cid)
         else: 
-            room['turn'] %= len(room['players']) # Safety modulo
+            room['turn'] %= len(room['players'])
             await next_turn_msg(context, cid)
 
 async def ganti_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -419,50 +420,54 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query; uid = q.from_user.id; data = q.data; cid = q.message.chat_id
     room = rooms.get(cid)
     
-    if data == "reset_acc":
-        db_query("UPDATE users SET points = 0", commit=True)
-        return await q.edit_message_text("✅ <b>RESET BERHASIL!</b> Seluruh poin Top Global dikembalikan ke 0.")
-    if data == "set_toggle":
-        set_setting('fsub_status', "off" if get_setting('fsub_status') == "on" else "on")
-        return await q.message.delete()
-    if data in ["set_id", "set_link", "set_msg", "set_btn"]:
-        context.user_data['editing'] = {"set_id": "fsub_id", "set_link": "fsub_link", "set_msg": "fsub_msg", "set_btn": "fsub_btn"}[data]
-        return await q.edit_message_text(f"📝 Kirim nilai baru untuk <b>{data}</b>.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="back_settings")]]), parse_mode=ParseMode.HTML)
-    if data == "back_settings": context.user_data.clear(); return await q.message.delete()
-    if data == "set_close": return await q.message.delete()
-    
-    if data == "my_score":
-        res = db_query("SELECT points, max_tc FROM users WHERE id=?", (uid,), fetchone=True)
-        pts = res[0] if res else 0
-        mtc = res[1] if res else 0
-        _, _, emo = get_level_info(mtc)
-        txt = (f"📈 <b>SCORE PERSONAL ANDA</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-               f"Nama: {q.from_user.first_name}\n"
-               f"Level Record: {emo} (Q-{mtc})\n"
-               f"Total Poin: <code>{pts}</code>\n\n"
-               f"<i>Gunakan menu ini untuk melihat score yang tidak tercatat di Top 10.</i>")
-        return await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kembali ke Top 10", callback_data="back_top")]]), parse_mode=ParseMode.HTML)
-    if data == "back_top":
-        res = db_query("SELECT username, points, max_tc FROM users ORDER BY points DESC LIMIT 10", fetchall=True)
-        txt = "🏆 <b>TOP 10 GLOBAL PLAYERS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
-        for i, r in enumerate(res): 
-            _, _, emo = get_level_info(r[2])
-            txt += f"{i+1}. {emo} {r[0]} — <code>{r[1]}</code> pts\n"
-        return await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📈 Score Saya", callback_data="my_score")]]), parse_mode=ParseMode.HTML)
-    
-    if data == "join" and room and not room['active'] and uid not in room['players']:
-        if not await check_fsub(uid, context): return await q.answer("Join channel dulu!", show_alert=True)
-        room['players'].append(uid); room['player_names'][uid] = q.from_user.first_name; room['mistakes'][uid] = 0
-        plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])])
-        await q.edit_message_text(f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n{plist}", reply_markup=q.message.reply_markup, parse_mode=ParseMode.HTML)
-    if data == "leave" and room and not room['active'] and uid in room['players']:
-        room['players'].remove(uid); room['player_names'].pop(uid, None); room['mistakes'].pop(uid, None)
-        plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])]) or "(Kosong)"
-        await q.edit_message_text(f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n{plist}", reply_markup=q.message.reply_markup, parse_mode=ParseMode.HTML)
-    if data == "play" and room:
-        if uid != room['creator']: return await q.answer("❌ Hanya Leader yang bisa memulai permainan!", show_alert=True)
-        if len(room['players']) < 2: return await q.answer("Minimal 2 pemain!", show_alert=True)
-        room['active'] = True; room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz"); await q.message.delete(); await next_turn_msg(context, cid)
+    try:
+        if data == "reset_acc":
+            db_query("UPDATE users SET points = 0", commit=True)
+            return await q.edit_message_text("✅ <b>RESET BERHASIL!</b> Seluruh poin Top Global dikembalikan ke 0.")
+        if data == "set_toggle":
+            set_setting('fsub_status', "off" if get_setting('fsub_status') == "on" else "on")
+            return await q.message.delete()
+        if data in ["set_id", "set_link", "set_msg", "set_btn"]:
+            context.user_data['editing'] = {"set_id": "fsub_id", "set_link": "fsub_link", "set_msg": "fsub_msg", "set_btn": "fsub_btn"}[data]
+            return await q.edit_message_text(f"📝 Kirim nilai baru untuk <b>{data}</b>.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="back_settings")]]), parse_mode=ParseMode.HTML)
+        if data == "back_settings": context.user_data.clear(); return await q.message.delete()
+        if data == "set_close": return await q.message.delete()
+        
+        if data == "my_score":
+            res = db_query("SELECT points, max_tc FROM users WHERE id=?", (uid,), fetchone=True)
+            pts = res[0] if res else 0
+            mtc = res[1] if res else 0
+            _, _, emo = get_level_info(mtc)
+            txt = (f"📈 <b>SCORE PERSONAL ANDA</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+                   f"Nama: {q.from_user.first_name}\n"
+                   f"Level Record: {emo} (Q-{mtc})\n"
+                   f"Total Poin: <code>{pts}</code>\n\n"
+                   f"<i>Gunakan menu ini untuk melihat score yang tidak tercatat di Top 10.</i>")
+            return await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kembali ke Top 10", callback_data="back_top")]]), parse_mode=ParseMode.HTML)
+        if data == "back_top":
+            res = db_query("SELECT username, points, max_tc FROM users ORDER BY points DESC LIMIT 10", fetchall=True)
+            txt = "🏆 <b>TOP 10 GLOBAL PLAYERS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+            for i, r in enumerate(res): 
+                _, _, emo = get_level_info(r[2])
+                txt += f"{i+1}. {emo} {r[0]} — <code>{r[1]}</code> pts\n"
+            return await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📈 Score Saya", callback_data="my_score")]]), parse_mode=ParseMode.HTML)
+        
+        if data == "join" and room and not room['active'] and uid not in room['players']:
+            if not await check_fsub(uid, context): return await q.answer("Join channel dulu!", show_alert=True)
+            room['players'].append(uid); room['player_names'][uid] = q.from_user.first_name; room['mistakes'][uid] = 0
+            plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])])
+            return await q.edit_message_text(f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n{plist}", reply_markup=q.message.reply_markup, parse_mode=ParseMode.HTML)
+        if data == "leave" and room and not room['active'] and uid in room['players']:
+            room['players'].remove(uid); room['player_names'].pop(uid, None); room['mistakes'].pop(uid, None)
+            plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])]) or "(Kosong)"
+            return await q.edit_message_text(f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n{plist}", reply_markup=q.message.reply_markup, parse_mode=ParseMode.HTML)
+        if data == "play" and room:
+            if uid != room['creator']: return await q.answer("❌ Hanya Leader yang bisa memulai permainan!", show_alert=True)
+            if len(room['players']) < 2: return await q.answer("Minimal 2 pemain!", show_alert=True)
+            room['active'] = True; room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz"); await q.message.delete(); await next_turn_msg(context, cid)
+    except BadRequest as e:
+        if "Message is not modified" in str(e): return await q.answer() # Abaikan jika konten sama
+        raise e
 
 # --- GAME LOGIC ---
 async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -480,7 +485,6 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         solo = SOLO_ROOMS[u.id]; word = update.message.text.strip().lower()
         _, min_l_solo, _ = get_level_info(solo['turn_count'])
         
-        # Cek Kesalahan Solo
         if word in solo['used_words'] and datetime.now() < solo['used_words'][word]:
             return await update.message.reply_text("❌ Kata ini sudah digunakan! (Limit 30m)", parse_mode=ParseMode.HTML)
         
@@ -494,7 +498,6 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
             err_txt += "📉 <b>Poin: -1</b>"
             return await update.message.reply_text(err_txt, parse_mode=ParseMode.HTML)
         
-        # Benar Solo
         solo['used_words'][word] = datetime.now() + timedelta(minutes=30)
         s_len = 3 if len(word) >= 5 else 2
         if len(word) == 6: s_len = 2
@@ -507,10 +510,7 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- GROUP MODE LOGIC ---
     if not room or not room['active']: return
-    
-    # PERBAIKAN: Safety check agar index tidak out of range (IndexError Fix)
-    if room['turn'] >= len(room['players']):
-        room['turn'] = 0
+    if room['turn'] >= len(room['players']): room['turn'] = 0
         
     if u.id != room['players'][room['turn']]: return
     if not update.message.reply_to_message or update.message.reply_to_message.from_user.id != context.bot.id: return
@@ -538,7 +538,6 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"💀 {u.first_name} tereliminasi! (Salah 3x)", parse_mode=ParseMode.HTML)
             room['players'].pop(room['turn'])
             if len(room['players']) < 2: return await finish_game(context, cid)
-            # PERBAIKAN: Modulo setelah pop agar index tetap valid
             room['turn'] %= len(room['players'])
         else:
             await update.message.reply_text(f"{err_msg}\n<i>Giliran dilempar ke pemain selanjutnya!</i>", parse_mode=ParseMode.HTML)
@@ -556,7 +555,6 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room['suffix'] = word[-s_len:]; room['turn_count'] += 1; room['turn'] = (room['turn'] + 1) % len(room['players'])
     update_points(u.id, u.first_name, 10, room['turn_count'])
     
-    # Notifikasi Benar
     await update.message.reply_text(f"✅ <b>JAWABAN BENAR!</b>\n{u.first_name} mendapatkan <b>+10 Poin</b>.", parse_mode=ParseMode.HTML)
     await next_turn_msg(context, cid)
 
