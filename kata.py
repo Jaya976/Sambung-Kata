@@ -159,6 +159,9 @@ async def timeout_handler(context: ContextTypes.DEFAULT_TYPE):
     cid = context.job.chat_id
     if cid in rooms and rooms[cid]['active']:
         room = rooms[cid]
+        # Safety Check agar timeout tidak crash jika pemain sisa 0
+        if not room['players']: return await finish_game(context, cid)
+        
         p_id = room['players'][room['turn']]
         p_name = room['player_names'].get(p_id, "Pemain")
         try: await context.bot.send_message(cid, f"⏰ <b>Waktu Habis!</b>\n{p_name} dilewati karena tidak menjawab dalam 45 detik!", parse_mode=ParseMode.HTML)
@@ -169,6 +172,11 @@ async def timeout_handler(context: ContextTypes.DEFAULT_TYPE):
 async def next_turn_msg(context, cid):
     if cid not in rooms: return
     room = rooms[cid]
+    if not room['players']: return await finish_game(context, cid)
+    
+    # Pastikan turn tidak melebihi jumlah pemain saat ini
+    room['turn'] %= len(room['players'])
+    
     next_p = room['players'][room['turn']]
     mention = f"<a href='tg://user?id={next_p}'>{room['player_names'][next_p]}</a>"
     suffix = room['suffix']
@@ -285,7 +293,9 @@ async def keluar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room['players'].pop(idx); room['player_names'].pop(uid, None); room['mistakes'].pop(uid, None)
     await update.message.reply_text(f"🏃 <b>{update.effective_user.first_name}</b> keluar.", parse_mode=ParseMode.HTML)
     if len(room['players']) < 2: await finish_game(context, cid)
-    elif room['active'] and is_turn: room['turn'] %= len(room['players']); await next_turn_msg(context, cid)
+    elif room['active']: 
+        room['turn'] %= len(room['players']) # Safety modulo
+        if is_turn: await next_turn_msg(context, cid)
 
 async def mulai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id; cid = update.effective_chat.id
@@ -319,7 +329,9 @@ async def usir_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         room['player_names'].pop(p_id, None)
         await update.message.reply_text(f"👋 <b>{p_name}</b> diusir dari permainan!", parse_mode=ParseMode.HTML)
         if len(room['players']) < 2: await finish_game(context, cid)
-        else: room['turn'] %= len(room['players']); await next_turn_msg(context, cid)
+        else: 
+            room['turn'] %= len(room['players']) # Safety modulo
+            await next_turn_msg(context, cid)
 
 async def ganti_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id; cid = update.effective_chat.id; room = rooms.get(cid)
@@ -494,7 +506,13 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(f"✅ <b>JAWABAN BENAR!</b> (+1 Poin)\nSambung: <b>{solo['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
     # --- GROUP MODE LOGIC ---
-    if not room or not room['active'] or u.id != room['players'][room['turn']]: return
+    if not room or not room['active']: return
+    
+    # PERBAIKAN: Safety check agar index tidak out of range (IndexError Fix)
+    if room['turn'] >= len(room['players']):
+        room['turn'] = 0
+        
+    if u.id != room['players'][room['turn']]: return
     if not update.message.reply_to_message or update.message.reply_to_message.from_user.id != context.bot.id: return
     if not update.message.text: return
     
@@ -520,6 +538,8 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"💀 {u.first_name} tereliminasi! (Salah 3x)", parse_mode=ParseMode.HTML)
             room['players'].pop(room['turn'])
             if len(room['players']) < 2: return await finish_game(context, cid)
+            # PERBAIKAN: Modulo setelah pop agar index tetap valid
+            room['turn'] %= len(room['players'])
         else:
             await update.message.reply_text(f"{err_msg}\n<i>Giliran dilempar ke pemain selanjutnya!</i>", parse_mode=ParseMode.HTML)
             room['turn'] = (room['turn'] + 1) % len(room['players'])
