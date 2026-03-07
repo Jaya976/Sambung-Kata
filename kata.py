@@ -271,7 +271,7 @@ async def donasi_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def spin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != Chat.PRIVATE:
-        return await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Fitur /spin hanya dapat digunakan di Private Chat bot.")
+        return await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Fitur /spin hanya dapat digunakan di Private Chat bot.", parse_mode=ParseMode.HTML)
     text = "🏆 <b>Spinwells Event Ramadhan</b>"
     kb = [[InlineKeyboardButton("🎡 Spin", callback_data="spin_go")],
           [InlineKeyboardButton("✅ Cek Saldo", callback_data="spin_cek")],
@@ -282,8 +282,8 @@ async def gabung_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     if not u: return
     uid = u.id; cid = update.effective_chat.id; room = rooms.get(cid)
-    if not room: return await context.bot.send_message(chat_id=cid, text="❌ Tidak ada pendaftaran aktif.")
-    if uid in room['players']: return await context.bot.send_message(chat_id=cid, text="❌ Anda sudah masuk pendaftaran.")
+    if not room: return await context.bot.send_message(chat_id=cid, text="❌ Tidak ada pendaftaran aktif.", parse_mode=ParseMode.HTML)
+    if uid in room['players']: return await context.bot.send_message(chat_id=cid, text="❌ Anda sudah masuk pendaftaran.", parse_mode=ParseMode.HTML)
     if not await check_fsub(uid, context): return await send_fsub_msg(update, context)
     room['players'].append(uid); room['player_names'][uid] = u.first_name; room['mistakes'][uid] = 0
     await context.bot.send_message(chat_id=cid, text=f"✅ <b>{u.first_name}</b> masuk ke arena!", parse_mode=ParseMode.HTML)
@@ -310,12 +310,12 @@ async def mulai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not u: return
     uid = u.id; cid = update.effective_chat.id
     if update.effective_chat.type == Chat.PRIVATE:
-        if uid in SOLO_ROOMS: return await context.bot.send_message(chat_id=cid, text="❌ Game Solo sedang berjalan!")
+        if uid in SOLO_ROOMS: return await context.bot.send_message(chat_id=cid, text="❌ Game Solo sedang berjalan!", parse_mode=ParseMode.HTML)
         start_char = random.choice("abcdefghijklmnopqrstuvwxyz")
         SOLO_ROOMS[uid] = {'suffix': start_char, 'used_words': {}, 'turn_count': 0}
         await context.bot.send_message(chat_id=cid, text=f"🎮 <b>SOLO MODE: AKTIF</b>\n\nSambung kata dari: <b>{start_char.upper()}</b>", parse_mode=ParseMode.HTML)
         return
-    if cid in rooms: return await context.bot.send_message(chat_id=cid, text="❌ Game sudah berjalan!")
+    if cid in rooms: return await context.bot.send_message(chat_id=cid, text="❌ Game sudah berjalan!", parse_mode=ParseMode.HTML)
     rooms[cid] = {'creator': uid, 'players': [uid], 'player_names': {uid: u.first_name}, 'active': False, 'suffix': '', 'turn': 0, 'turn_count': 0, 'used_words': {}, 'mistakes': {}, 'ganti_limit': {}, 'usir_limit': 1}
     kb = [[InlineKeyboardButton("🚪 Gabung", callback_data="join"), InlineKeyboardButton("🏃 Keluar", callback_data="leave")], [InlineKeyboardButton("▶️ Play", callback_data="play")]]
     await context.bot.send_message(chat_id=cid, text=f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n1. {u.first_name}", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
@@ -325,14 +325,14 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not u: return
     cid = update.effective_chat.id; uid = u.id
     if update.effective_chat.type == Chat.PRIVATE:
-        if uid in SOLO_ROOMS: SOLO_ROOMS.pop(uid); return await context.bot.send_message(chat_id=cid, text="🏁 <b>Game Solo Dihentikan.</b>")
+        if uid in SOLO_ROOMS: SOLO_ROOMS.pop(uid); return await context.bot.send_message(chat_id=cid, text="🏁 <b>Game Solo Dihentikan.</b>", parse_mode=ParseMode.HTML)
     room = rooms.get(cid)
     if room and (uid == room['creator'] or is_owner(uid)): await finish_game(context, cid)
 
 async def usir_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id; room = rooms.get(cid)
     if room and room['active']:
-        if room['usir_limit'] <= 0: return await context.bot.send_message(chat_id=cid, text="❌ Jatah /usir habis!")
+        if room['usir_limit'] <= 0: return await context.bot.send_message(chat_id=cid, text="❌ Jatah /usir habis!", parse_mode=ParseMode.HTML)
         room['usir_limit'] -= 1
         p_id = room['players'][room['turn']]; p_name = room['player_names'].get(p_id, "Pemain")
         room['players'].pop(room['turn']); room['player_names'].pop(p_id, None)
@@ -345,7 +345,7 @@ async def ganti_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not u: return
     uid = u.id; cid = update.effective_chat.id; room = rooms.get(cid)
     if room and room['active'] and uid == room['players'][room['turn']]:
-        if room['ganti_limit'].get(uid, 0) >= 1: return await context.bot.send_message(chat_id=cid, text="❌ Limit ganti habis!")
+        if room['ganti_limit'].get(uid, 0) >= 1: return await context.bot.send_message(chat_id=cid, text="❌ Limit ganti habis!", parse_mode=ParseMode.HTML)
         room['ganti_limit'][uid] = 1; room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz")
         await context.bot.send_message(chat_id=cid, text=f"🔄 HURUF BARU: <b>{room['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
@@ -379,9 +379,9 @@ async def edit_point(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = context.args[0].replace("@", ""); op = context.args[1]; val = int(context.args[2])
         if target.isdigit(): db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE id = ?", (val, int(target)), commit=True)
         else: db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE username = ?", (val, target), commit=True)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Berhasil mengubah poin {target}!")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Berhasil mengubah poin {target}!", parse_mode=ParseMode.HTML)
     except: 
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Format: /e [ID/User] [+ / -] [Poin]")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Format: /e [ID/User] [+ / -] [Poin]", parse_mode=ParseMode.HTML)
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = db_query("SELECT username, points, max_tc FROM users ORDER BY points DESC LIMIT 10", fetchall=True)
@@ -394,9 +394,9 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     if not u or not is_owner(u.id): return
     is_group = "bcgroup" in update.effective_message.text; msg = update.effective_message.reply_to_message; text_val = " ".join(context.args)
-    if not msg and not text_val: return await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Pesan kosong!")
+    if not msg and not text_val: return await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Pesan kosong!", parse_mode=ParseMode.HTML)
     targets = db_query(f"SELECT id FROM {'groups' if is_group else 'users'}", fetchall=True)
-    s, f = 0, 0; st_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚀 Memulai Broadcast...")
+    s, f = 0, 0; st_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚀 Memulai Broadcast...", parse_mode=ParseMode.HTML)
     for t in targets:
         try:
             chat_info = await context.bot.get_chat(t[0])
@@ -406,7 +406,7 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s += 1
         except: f += 1
         await asyncio.sleep(0.05)
-    await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=st_msg.message_id, text=f"✅ <b>Selesai!</b>\n🟢 Sukses: {s}\n🔴 Gagal: {f}")
+    await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=st_msg.message_id, text=f"✅ <b>Selesai!</b>\n🟢 Sukses: {s}\n🔴 Gagal: {f}", parse_mode=ParseMode.HTML)
 
 # --- CALLBACK LOGIC ---
 async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -443,6 +443,7 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pts, sc = res if res else (0, 0)
         if pts < 1000: return await q.answer("❌ Poin Top Global kurang! (Min 1.000)", show_alert=True)
         db_query("UPDATE users SET points = points - 1000, spin_count = spin_count + 1 WHERE id = ?", (uid,), commit=True)
+        # Spin Animation with random numbers
         prices = [100, 500, 1000, 2000, 5000, 10000]
         for i in range(1, 8):
             bar = "▒" * i + "░" * (8-i); rand_price = random.choice(prices)
@@ -465,18 +466,27 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res = db_query("SELECT balance FROM users WHERE id=?", (uid,), fetchone=True)
         if (res[0] if res else 0) < 50000: return await q.answer(f"❌ Balance kurang! (Minimal Rp50.000).", show_alert=True)
         context.user_data['state'] = 'wd_input'
-        wd_text = ("Kirimkan format withdraw untuk admin Transfer\nGunakan Bank Indonesia Agar Transfer Tidak Terkena Biaya Admin.\n\n"
-                   "Format:\nNama Bank:\nNomor Rekening:\nNama Pemilik Rekening:\nTotal Withdraw:\n\n"
-                   "Contoh:\nNama Bank: BRI\nNomor Rekening: 101112131414\nNama Pemilik Rekening: Akhmad syahroni\nTotal Withdraw: rp. 50.000\n\n"
+        wd_text = ("<b>Kirimkan format withdraw untuk admin Transfer</b>\n"
+                   "Gunakan Bank Indonesia Agar Transfer Tidak Terkena Biaya Admin.\n\n"
+                   "<b>Format:</b>\n"
+                   "Nama Bank:\n"
+                   "Nomor Rekening:\n"
+                   "Nama Pemilik Rekening:\n"
+                   "Total Withdraw:\n\n"
+                   "<b>Contoh:</b>\n"
+                   "Nama Bank: BRI\n"
+                   "Nomor Rekening: 101112131414\n"
+                   "Nama Pemilik Rekening: Akhmad syahroni\n"
+                   "Total Withdraw: rp. 50.000\n\n"
                    "Isi format tersebut lalu kirimkan di bot Sambung-kata.")
         return await q.edit_message_text(wd_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Batal", callback_data="spin_back")]]), parse_mode=ParseMode.HTML)
 
     try:
-        if data == "reset_acc": db_query("UPDATE users SET points = 0", commit=True); return await q.edit_message_text("✅ Reset Berhasil!")
+        if data == "reset_acc": db_query("UPDATE users SET points = 0", commit=True); return await q.edit_message_text("✅ Reset Berhasil!", parse_mode=ParseMode.HTML)
         if data == "set_toggle": set_setting('fsub_status', "off" if get_setting('fsub_status') == "on" else "on"); return await q.message.delete()
         if data in ["set_id", "set_link", "set_msg", "set_btn"]:
             context.user_data['editing'] = {"set_id": "fsub_id", "set_link": "fsub_link", "set_msg": "fsub_msg", "set_btn": "fsub_btn"}[data]
-            return await q.edit_message_text(f"📝 Kirim nilai baru untuk <b>{data}</b>.")
+            return await q.edit_message_text(f"📝 Kirim nilai baru untuk <b>{data}</b>.", parse_mode=ParseMode.HTML)
         if data == "set_close": return await q.message.delete()
         if data == "my_score":
             res = db_query("SELECT points, max_tc FROM users WHERE id=?", (uid,), fetchone=True); pts, mtc = res if res else (0,0); _, _, emo = get_level_info(mtc)
@@ -506,13 +516,14 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not u: return 
     cid = update.effective_chat.id; room = rooms.get(cid)
     
+    # Logic Forward Media Proof from Owner to User
     if is_owner(u.id) and msg_obj.reply_to_message:
         reply = msg_obj.reply_to_message; msg_text = reply.text or reply.caption or ""
         if "WD_ID:" in msg_text:
             try:
                 target_uid = int(msg_text.split("WD_ID:")[1].split("\n")[0].strip())
                 await context.bot.copy_message(chat_id=target_uid, from_chat_id=cid, message_id=msg_obj.message_id)
-                return await context.bot.send_message(chat_id=cid, text="✅ Bukti/Balasan berhasil dikirim ke user.")
+                return await context.bot.send_message(chat_id=cid, text="✅ Bukti/Balasan berhasil dikirim ke user.", parse_mode=ParseMode.HTML)
             except: pass
 
     if context.user_data.get('state') == 'wd_input':
@@ -520,30 +531,35 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         requested_amount = 0
         match = re.search(r"Total Withdraw:\D*(\d+[\d\.]*)", text_input, re.IGNORECASE)
         if match:
-            raw_amount = match.group(1).replace(".", "")
+            raw_amount = match.group(1).replace(".", "").replace(",", "")
             if raw_amount.isdigit(): requested_amount = int(raw_amount)
         
         res = db_query("SELECT balance FROM users WHERE id=?", (u.id,), fetchone=True)
         current_balance = res[0] if res else 0
-        if requested_amount < 50000: return await context.bot.send_message(chat_id=cid, text="❌ <b>GAGAL:</b> Minimal penarikan adalah Rp50.000!")
-        if requested_amount > current_balance: return await context.bot.send_message(chat_id=cid, text=f"❌ <b>GAGAL:</b> Saldo Anda tidak cukup!\nSaldo Anda: Rp{current_balance:,}")
         
+        if requested_amount < 50000:
+            return await context.bot.send_message(chat_id=cid, text="❌ <b>GAGAL:</b> Minimal penarikan adalah Rp50.000!", parse_mode=ParseMode.HTML)
+        
+        if requested_amount > current_balance:
+            return await context.bot.send_message(chat_id=cid, text=f"❌ <b>GAGAL:</b> Saldo Anda tidak cukup!\nSaldo Anda: Rp{current_balance:,}\nPermintaan: Rp{requested_amount:,}", parse_mode=ParseMode.HTML)
+        
+        # Subtract only the requested amount
         db_query("UPDATE users SET balance = balance - ? WHERE id = ?", (requested_amount, u.id), commit=True)
         report = (f"💰 <b>PENGAJUAN WITHDRAW</b>\nUser: {u.mention_html()}\nWD_ID: {u.id}\n"
                   f"Ditarik: Rp{requested_amount:,}\nSisa Saldo: Rp{current_balance - requested_amount:,}\n\nData:\n{text_input}")
         await context.bot.send_message(OWNER_ID, report, parse_mode=ParseMode.HTML)
         context.user_data.clear()
-        return await context.bot.send_message(chat_id=cid, text=f"✅ <b>Berhasil!</b>\nPenarikan Rp{requested_amount:,} diajukan.\nMohon tunggu dalam 1×24 jam.")
+        return await context.bot.send_message(chat_id=cid, text=f"✅ <b>Berhasil!</b>\nPenarikan Rp{requested_amount:,} diajukan.\nMohon tunggu dalam 1×24 jam.", parse_mode=ParseMode.HTML)
 
     if 'editing' in context.user_data and is_owner(u.id):
-        set_setting(context.user_data['editing'], msg_obj.text); context.user_data.clear(); return await context.bot.send_message(chat_id=cid, text="✅ Disimpan!")
+        set_setting(context.user_data['editing'], msg_obj.text); context.user_data.clear(); return await context.bot.send_message(chat_id=cid, text="✅ Disimpan!", parse_mode=ParseMode.HTML)
 
     if update.effective_chat.type == Chat.PRIVATE and u.id in SOLO_ROOMS:
         if not msg_obj.text: return
         solo = SOLO_ROOMS[u.id]; word = msg_obj.text.strip().lower(); _, min_l_solo, _ = get_level_info(solo['turn_count'])
-        if word in solo['used_words'] and datetime.now() < solo['used_words'][word]: return await context.bot.send_message(chat_id=cid, text="❌ Dipakai!")
+        if word in solo['used_words'] and datetime.now() < solo['used_words'][word]: return await context.bot.send_message(chat_id=cid, text="❌ Dipakai!", parse_mode=ParseMode.HTML)
         if word in BANNED_NAMES or word not in dictionary or not word.startswith(solo['suffix']) or len(word) < min_l_solo:
-            update_points(u.id, u.first_name, -1, solo['turn_count']); return await context.bot.send_message(chat_id=cid, text="❌ SALAH!")
+            update_points(u.id, u.first_name, -1, solo['turn_count']); return await context.bot.send_message(chat_id=cid, text="❌ SALAH!", parse_mode=ParseMode.HTML)
         solo['used_words'][word] = datetime.now() + timedelta(minutes=30); s_len = 3 if len(word) >= 5 else 2; solo['suffix'] = word[-s_len:]; solo['turn_count'] += 1; update_points(u.id, u.first_name, 1, solo['turn_count'])
         return await context.bot.send_message(chat_id=cid, text=f"✅ BENAR!\nSambung: <b>{solo['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
@@ -552,17 +568,17 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg_obj.reply_to_message or msg_obj.reply_to_message.from_user.id != context.bot.id: return
     if not msg_obj.text: return
     word = msg_obj.text.strip().lower(); tc = room['turn_count']; lvl_name, min_l, lvl_emo = get_level_info(tc)
-    if word in room['used_words'] and datetime.now() < room['used_words'][word]: return await context.bot.send_message(chat_id=cid, text="❌ Sudah dipakai!")
+    if word in room['used_words'] and datetime.now() < room['used_words'][word]: return await context.bot.send_message(chat_id=cid, text="❌ Sudah dipakai!", parse_mode=ParseMode.HTML)
     if word in BANNED_NAMES or len(word) < min_l or word not in dictionary or (room['suffix'] and not word.startswith(room['suffix'])):
         update_points(u.id, u.first_name, -5, tc); room['mistakes'][u.id] = room['mistakes'].get(u.id, 0) + 1
         if room['mistakes'][u.id] >= 3:
-            await context.bot.send_message(chat_id=cid, text=f"💀 {u.first_name} tereliminasi!"); room['players'].pop(room['turn'])
+            await context.bot.send_message(chat_id=cid, text=f"💀 {u.first_name} tereliminasi!", parse_mode=ParseMode.HTML); room['players'].pop(room['turn'])
             if len(room['players']) < 2: return await finish_game(context, cid)
             room['turn'] %= len(room['players'])
-        else: await context.bot.send_message(chat_id=cid, text="❌ JAWABAN SALAH! (-5 Poin)"); room['turn'] = (room['turn'] + 1) % len(room['players'])
+        else: await context.bot.send_message(chat_id=cid, text="❌ JAWABAN SALAH! (-5 Poin)", parse_mode=ParseMode.HTML); room['turn'] = (room['turn'] + 1) % len(room['players'])
         return await next_turn_msg(context, cid)
     room['used_words'][word] = datetime.now() + timedelta(minutes=30); s_len = 3 if len(word) >= 5 else 2; room['suffix'] = word[-s_len:]; room['turn_count'] += 1; room['turn'] = (room['turn'] + 1) % len(room['players']); update_points(u.id, u.first_name, 10, room['turn_count'])
-    await context.bot.send_message(chat_id=cid, text=f"✅ BENAR! +10 Poin."); await next_turn_msg(context, cid)
+    await context.bot.send_message(chat_id=cid, text=f"✅ BENAR! +10 Poin.", parse_mode=ParseMode.HTML); await next_turn_msg(context, cid)
 
 def main():
     app = Application.builder().token(TOKEN).build()
