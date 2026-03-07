@@ -112,7 +112,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     if isinstance(context.error, BadRequest) and "Message is not modified" in str(context.error): return
     tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
     tb_string = "".join(tb_list)
-    log_msg = (f"⚠️ <b>DETEKSI ERROR SISTEM</b>\n\n<b>Error:</b> <code>{context.error}</code>\n\n<b>Traceback:</b>\n<code>{tb_string[-2000:]}</code>")
+    log_msg = (f"⚠️ <b>DETEKSI ERROR SISTEM</b>\n\n"
+               f"<b>Error:</b> <code>{context.error}</code>\n\n"
+               f"<b>Traceback:</b>\n<code>{tb_string[-2000:]}</code>")
     try: await context.bot.send_message(LOG_GROUP_ID, log_msg, parse_mode=ParseMode.HTML)
     except: pass
 
@@ -141,8 +143,7 @@ async def send_fsub_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = get_setting('fsub_msg').replace("{mention}", mention)
     kb = [[InlineKeyboardButton(get_setting('fsub_btn'), url=get_setting('fsub_link'))],
           [InlineKeyboardButton("✅ Saya Sudah Join", url=f"https://t.me/{context.bot.username}?start=mulai")]]
-    try: await update.effective_message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
-    except: pass
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 def update_points(user_id, username, amount, tc_reached=0):
     un = username.replace("@", "") if username else "Player"
@@ -188,9 +189,11 @@ async def next_turn_msg(context, cid):
 
 # --- COMMAND HANDLERS ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id; cid = update.effective_chat.id
+    u = update.effective_user
+    if not u: return
+    uid = u.id; cid = update.effective_chat.id
     if update.effective_chat.type == Chat.PRIVATE:
-        update_points(uid, update.effective_user.first_name, 0)
+        update_points(uid, u.first_name, 0)
     if not await check_fsub(uid, context): return await send_fsub_msg(update, context)
     
     text1 = (" 👋 Hallo, ayok kita main sambung kata!\n\n"
@@ -212,11 +215,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     kb1 = [[InlineKeyboardButton("➕ MASUKKAN KE GRUP", url=f"https://t.me/{context.bot.username}?startgroup=start")],
           [InlineKeyboardButton("👨‍💻 Developer", url=f"tg://user?id={OWNER_ID}"), InlineKeyboardButton("⚡ Support", url="https://t.me/bungkata")]]
-    await update.effective_message.reply_text(text1, reply_markup=InlineKeyboardMarkup(kb1), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    await context.bot.send_message(chat_id=cid, text=text1, reply_markup=InlineKeyboardMarkup(kb1), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     text2 = "🏃‍♀️<b>Raih Segera Akun Anda Kedalam Level Paling Sulit Level (🏅WNI)</b>"
     kb2 = [[InlineKeyboardButton("📖 Kamus", url="https://t.me/kbbibot")]]
-    msg2 = await update.effective_message.reply_text(text2, reply_markup=InlineKeyboardMarkup(kb2), parse_mode=ParseMode.HTML)
+    msg2 = await context.bot.send_message(chat_id=cid, text=text2, reply_markup=InlineKeyboardMarkup(kb2), parse_mode=ParseMode.HTML)
     try: await context.bot.pin_chat_message(chat_id=cid, message_id=msg2.message_id)
     except: pass
 
@@ -237,7 +240,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Jika kamu menyukai bot ini dan ingin memberikan donasi kepada Developer (Dev.TJ) Sambung-Kata kamu bisa mengirimkan nya ke nomor Gopay yang tersedia!\n\n"
             "<b>Gopay:</b> <code>089678824963</code> a/n TJ\n\n"
             "🛠 <b>SUPPORT:</b> Hubungi @bungkata")
-    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode=ParseMode.HTML)
 
 async def peraturan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = ("📖 <b>PERATURAN PERMAINAN</b>\n━━━━━━━━━━━━━━━\n"
@@ -257,130 +260,143 @@ async def peraturan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Wajib Reply pesan bot saat di dalam Grup.\n\n"
             "4. 💀 <b>Eliminasi:</b>\n"
             "Salah sebanyak 3 kali atau tidak menjawab tepat waktu akan membuat Anda keluar otomatis.")
-    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode=ParseMode.HTML)
 
 async def donasi_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     text = ("🎁 <b>DONASI</b> 🎁 \n"
             "Donasi ini digunakan untuk kebutuhan bot agar bot tetap hidup.\n"
             "Jika kamu menyukai bot ini silahkan berdonasi melalui qris manual dibawah.")
     kb = [[InlineKeyboardButton("🎁 Donasi", callback_data="donasi_qris")]]
-    if update.effective_message: await update.effective_message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
-    else: await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def spin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != Chat.PRIVATE:
-        return await update.effective_message.reply_text("❌ Fitur /spin hanya dapat digunakan di Private Chat bot.")
+        return await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Fitur /spin hanya dapat digunakan di Private Chat bot.")
     text = "🏆 <b>Spinwells Event Ramadhan</b>"
     kb = [[InlineKeyboardButton("🎡 Spin", callback_data="spin_go")],
           [InlineKeyboardButton("✅ Cek Saldo", callback_data="spin_cek")],
           [InlineKeyboardButton("💰 Withdraw", callback_data="spin_wd")]]
-    await update.effective_message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def gabung_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id; cid = update.effective_chat.id; room = rooms.get(cid)
-    if not room: return await update.effective_message.reply_text("❌ Tidak ada pendaftaran aktif.")
-    if uid in room['players']: return await update.effective_message.reply_text("❌ Anda sudah masuk pendaftaran.")
+    u = update.effective_user
+    if not u: return
+    uid = u.id; cid = update.effective_chat.id; room = rooms.get(cid)
+    if not room: return await context.bot.send_message(chat_id=cid, text="❌ Tidak ada pendaftaran aktif.")
+    if uid in room['players']: return await context.bot.send_message(chat_id=cid, text="❌ Anda sudah masuk pendaftaran.")
     if not await check_fsub(uid, context): return await send_fsub_msg(update, context)
-    room['players'].append(uid); room['player_names'][uid] = update.effective_user.first_name; room['mistakes'][uid] = 0
-    await update.effective_message.reply_text(f"✅ <b>{update.effective_user.first_name}</b> masuk ke arena!", parse_mode=ParseMode.HTML)
+    room['players'].append(uid); room['player_names'][uid] = u.first_name; room['mistakes'][uid] = 0
+    await context.bot.send_message(chat_id=cid, text=f"✅ <b>{u.first_name}</b> masuk ke arena!", parse_mode=ParseMode.HTML)
 
 async def keluar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id; cid = update.effective_chat.id
+    u = update.effective_user
+    if not u: return
+    uid = u.id; cid = update.effective_chat.id
     if update.effective_chat.type == Chat.PRIVATE:
-        if uid in SOLO_ROOMS: SOLO_ROOMS.pop(uid); return await update.effective_message.reply_text("🛑 <b>Game Solo Dihentikan.</b>", parse_mode=ParseMode.HTML)
+        if uid in SOLO_ROOMS: SOLO_ROOMS.pop(uid); return await context.bot.send_message(chat_id=cid, text="🛑 <b>Game Solo Dihentikan.</b>", parse_mode=ParseMode.HTML)
         return
     room = rooms.get(cid)
     if not room or uid not in room['players']: return
     idx = room['players'].index(uid); is_turn = (room['active'] and room['turn'] == idx)
     room['players'].pop(idx); room['player_names'].pop(uid, None); room['mistakes'].pop(uid, None)
-    await update.effective_message.reply_text(f"🏃 <b>{update.effective_user.first_name}</b> keluar.", parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=cid, text=f"🏃 <b>{u.first_name}</b> keluar.", parse_mode=ParseMode.HTML)
     if len(room['players']) < 2: await finish_game(context, cid)
     elif room['active']: 
         room['turn'] %= len(room['players'])
         if is_turn: await next_turn_msg(context, cid)
 
 async def mulai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id; cid = update.effective_chat.id
+    u = update.effective_user
+    if not u: return
+    uid = u.id; cid = update.effective_chat.id
     if update.effective_chat.type == Chat.PRIVATE:
-        if uid in SOLO_ROOMS: return await update.effective_message.reply_text("❌ Game Solo sedang berjalan!", parse_mode=ParseMode.HTML)
+        if uid in SOLO_ROOMS: return await context.bot.send_message(chat_id=cid, text="❌ Game Solo sedang berjalan!")
         start_char = random.choice("abcdefghijklmnopqrstuvwxyz")
         SOLO_ROOMS[uid] = {'suffix': start_char, 'used_words': {}, 'turn_count': 0}
-        await update.effective_message.reply_text(f"🎮 <b>SOLO MODE: AKTIF</b>\n\nSambung kata dari: <b>{start_char.upper()}</b>", parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat_id=cid, text=f"🎮 <b>SOLO MODE: AKTIF</b>\n\nSambung kata dari: <b>{start_char.upper()}</b>", parse_mode=ParseMode.HTML)
         return
-    if cid in rooms: return await update.effective_message.reply_text("❌ Game sudah berjalan!", parse_mode=ParseMode.HTML)
-    rooms[cid] = {'creator': uid, 'players': [uid], 'player_names': {uid: update.effective_user.first_name}, 'active': False, 'suffix': '', 'turn': 0, 'turn_count': 0, 'used_words': {}, 'mistakes': {}, 'ganti_limit': {}, 'usir_limit': 1}
+    if cid in rooms: return await context.bot.send_message(chat_id=cid, text="❌ Game sudah berjalan!")
+    rooms[cid] = {'creator': uid, 'players': [uid], 'player_names': {uid: u.first_name}, 'active': False, 'suffix': '', 'turn': 0, 'turn_count': 0, 'used_words': {}, 'mistakes': {}, 'ganti_limit': {}, 'usir_limit': 1}
     kb = [[InlineKeyboardButton("🚪 Gabung", callback_data="join"), InlineKeyboardButton("🏃 Keluar", callback_data="leave")], [InlineKeyboardButton("▶️ Play", callback_data="play")]]
-    await context.bot.send_message(chat_id=cid, text=f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n1. {update.effective_user.first_name}", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=cid, text=f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n1. {u.first_name}", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cid = update.effective_chat.id; uid = update.effective_user.id
+    u = update.effective_user
+    if not u: return
+    cid = update.effective_chat.id; uid = u.id
     if update.effective_chat.type == Chat.PRIVATE:
-        if uid in SOLO_ROOMS: SOLO_ROOMS.pop(uid); return await update.effective_message.reply_text("🏁 <b>Game Solo Berhasil Dihentikan.</b>", parse_mode=ParseMode.HTML)
+        if uid in SOLO_ROOMS: SOLO_ROOMS.pop(uid); return await context.bot.send_message(chat_id=cid, text="🏁 <b>Game Solo Dihentikan.</b>")
     room = rooms.get(cid)
     if room and (uid == room['creator'] or is_owner(uid)): await finish_game(context, cid)
 
 async def usir_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id; room = rooms.get(cid)
     if room and room['active']:
-        if room['usir_limit'] <= 0: return await update.effective_message.reply_text("❌ Jatah /usir habis!", parse_mode=ParseMode.HTML)
+        if room['usir_limit'] <= 0: return await context.bot.send_message(chat_id=cid, text="❌ Jatah /usir habis!")
         room['usir_limit'] -= 1
         p_id = room['players'][room['turn']]; p_name = room['player_names'].get(p_id, "Pemain")
         room['players'].pop(room['turn']); room['player_names'].pop(p_id, None)
-        await update.effective_message.reply_text(f"👋 <b>{p_name}</b> diusir!", parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat_id=cid, text=f"👋 <b>{p_name}</b> diusir!", parse_mode=ParseMode.HTML)
         if len(room['players']) < 2: await finish_game(context, cid)
         else: room['turn'] %= len(room['players']); await next_turn_msg(context, cid)
 
 async def ganti_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id; cid = update.effective_chat.id; room = rooms.get(cid)
+    u = update.effective_user
+    if not u: return
+    uid = u.id; cid = update.effective_chat.id; room = rooms.get(cid)
     if room and room['active'] and uid == room['players'][room['turn']]:
-        if room['ganti_limit'].get(uid, 0) >= 1: return await update.effective_message.reply_text("❌ Limit ganti habis!")
+        if room['ganti_limit'].get(uid, 0) >= 1: return await context.bot.send_message(chat_id=cid, text="❌ Limit ganti habis!")
         room['ganti_limit'][uid] = 1; room['suffix'] = random.choice("abcdefghijklmnopqrstuvwxyz")
-        await update.effective_message.reply_text(f"🔄 HURUF BARU: <b>{room['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat_id=cid, text=f"🔄 HURUF BARU: <b>{room['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
 # --- ADMIN COMMANDS ---
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id): return
+    u = update.effective_user
+    if not u or not is_owner(u.id): return
     status = get_setting('fsub_status'); btn_toggle = "🟢 ON" if status == "on" else "🔴 OFF"
     kb = [[InlineKeyboardButton(f"Fsub: {btn_toggle}", callback_data="set_toggle"), InlineKeyboardButton("🆔 Set ID", callback_data="set_id")],
           [InlineKeyboardButton("📝 Set Text", callback_data="set_msg"), InlineKeyboardButton("🔗 Set Link", callback_data="set_link")],
           [InlineKeyboardButton("🏷️ Set Nama", callback_data="set_btn"), InlineKeyboardButton("❌ Tutup", callback_data="set_close")]]
-    await update.effective_message.reply_text("⚙️ <b>FSUB SETTINGS</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="⚙️ <b>FSUB SETTINGS</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id): return
+    u = update.effective_user
+    if not u or not is_owner(u.id): return
     kb = [[InlineKeyboardButton("✅ ACC (Reset)", callback_data="reset_acc"), InlineKeyboardButton("❌ Batal", callback_data="set_close")]]
-    await update.effective_message.reply_text("⚠️ <b>RESET TOTAL TOP SCORE?</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ <b>RESET TOTAL TOP SCORE?</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id): return
-    u = db_query("SELECT COUNT(*) FROM users", fetchone=True)[0]
-    g = db_query("SELECT COUNT(*) FROM groups", fetchone=True)[0]
-    await update.effective_message.reply_text(f"📊 <b>STATISTIK BOT</b>\nUser: {u}\nGrup: {g}", parse_mode=ParseMode.HTML)
+    u = update.effective_user
+    if not u or not is_owner(u.id): return
+    u_count = db_query("SELECT COUNT(*) FROM users", fetchone=True)[0]
+    g_count = db_query("SELECT COUNT(*) FROM groups", fetchone=True)[0]
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📊 <b>STATISTIK BOT</b>\nUser: {u_count}\nGrup: {g_count}", parse_mode=ParseMode.HTML)
 
 async def edit_point(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id): return
+    u = update.effective_user
+    if not u or not is_owner(u.id): return
     try:
         target = context.args[0].replace("@", ""); op = context.args[1]; val = int(context.args[2])
         if target.isdigit(): db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE id = ?", (val, int(target)), commit=True)
         else: db_query(f"UPDATE users SET points = MAX(0, points {op} ?) WHERE username = ?", (val, target), commit=True)
-        await update.effective_message.reply_text(f"✅ Berhasil mengubah poin {target}!")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Berhasil mengubah poin {target}!")
     except: 
-        if update.effective_message: await update.effective_message.reply_text("Format: /e [ID/User] [+ / -] [Poin]")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Format: /e [ID/User] [+ / -] [Poin]")
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = db_query("SELECT username, points, max_tc FROM users ORDER BY points DESC LIMIT 10", fetchall=True)
     txt = "🏆 <b>TOP 10 GLOBAL PLAYERS</b>\n━━━━━━━━━━━━━━━━━━━━\n"
     for i, r in enumerate(res): _, _, emo = get_level_info(r[2]); txt += f"{i+1}. {emo} {r[0]} — <code>{r[1]}</code> pts\n"
     kb = [[InlineKeyboardButton("📈 Score Saya", callback_data="my_score")]]
-    await update.effective_message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_owner(update.effective_user.id): return
+    u = update.effective_user
+    if not u or not is_owner(u.id): return
     is_group = "bcgroup" in update.effective_message.text; msg = update.effective_message.reply_to_message; text_val = " ".join(context.args)
-    if not msg and not text_val: return await update.effective_message.reply_text("❌ Pesan kosong!")
+    if not msg and not text_val: return await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Pesan kosong!")
     targets = db_query(f"SELECT id FROM {'groups' if is_group else 'users'}", fetchall=True)
-    s, f = 0, 0; st_msg = await update.effective_message.reply_text(f"🚀 Memulai Broadcast...")
+    s, f = 0, 0; st_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚀 Memulai Broadcast...")
     for t in targets:
         try:
             chat_info = await context.bot.get_chat(t[0])
@@ -390,11 +406,11 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s += 1
         except: f += 1
         await asyncio.sleep(0.05)
-    await st_msg.edit_text(f"✅ <b>Selesai!</b>\n🟢 Sukses: {s}\n🔴 Gagal: {f}")
+    await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=st_msg.message_id, text=f"✅ <b>Selesai!</b>\n🟢 Sukses: {s}\n🔴 Gagal: {f}")
 
 # --- CALLBACK LOGIC ---
 async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; uid = q.from_user.id; data = q.data; cid = q.message.chat_id
+    q = update.callback_query; u = q.from_user; uid = u.id; data = q.data; cid = q.message.chat_id
     room = rooms.get(cid)
     
     if data == "donasi_qris":
@@ -427,7 +443,7 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pts, sc = res if res else (0, 0)
         if pts < 1000: return await q.answer("❌ Poin Top Global kurang! (Min 1.000)", show_alert=True)
         db_query("UPDATE users SET points = points - 1000, spin_count = spin_count + 1 WHERE id = ?", (uid,), commit=True)
-        prices = [100, 200, 500, 1000, 5000, 10000, 20000, 50000, 100000]
+        prices = [100, 500, 1000, 2000, 5000, 10000]
         for i in range(1, 8):
             bar = "▒" * i + "░" * (8-i); rand_price = random.choice(prices)
             try: await q.edit_message_text(f"⚙️Spin [{bar}] Rp. {rand_price:,}", parse_mode=ParseMode.HTML)
@@ -471,7 +487,7 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📈 Score Saya", callback_data="my_score")]]), parse_mode=ParseMode.HTML)
         if data == "join" and room and not room['active'] and uid not in room['players']:
             if not await check_fsub(uid, context): return await q.answer("Join channel dulu!", show_alert=True)
-            room['players'].append(uid); room['player_names'][uid] = q.from_user.first_name; room['mistakes'][uid] = 0; plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])])
+            room['players'].append(uid); room['player_names'][uid] = u.first_name; room['mistakes'][uid] = 0; plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])])
             return await q.edit_message_text(f"🎮 <b>ROOM DIBUKA</b>\n\n<b>Pemain:</b>\n{plist}", reply_markup=q.message.reply_markup, parse_mode=ParseMode.HTML)
         if data == "leave" and room and not room['active'] and uid in room['players']:
             room['players'].remove(uid); room['player_names'].pop(uid, None); plist = "\n".join([f"{i+1}. {room['player_names'][p]}" for i,p in enumerate(room['players'])]) or "(Kosong)"
@@ -486,7 +502,9 @@ async def cb_logic(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_obj = update.effective_message
     if not msg_obj: return
-    u = update.effective_user; cid = update.effective_chat.id; room = rooms.get(cid)
+    u = update.effective_user
+    if not u: return 
+    cid = update.effective_chat.id; room = rooms.get(cid)
     
     if is_owner(u.id) and msg_obj.reply_to_message:
         reply = msg_obj.reply_to_message; msg_text = reply.text or reply.caption or ""
@@ -494,76 +512,57 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 target_uid = int(msg_text.split("WD_ID:")[1].split("\n")[0].strip())
                 await context.bot.copy_message(chat_id=target_uid, from_chat_id=cid, message_id=msg_obj.message_id)
-                return await msg_obj.reply_text("✅ Bukti/Balasan berhasil dikirim ke user.")
+                return await context.bot.send_message(chat_id=cid, text="✅ Bukti/Balasan berhasil dikirim ke user.")
             except: pass
 
     if context.user_data.get('state') == 'wd_input':
-        # --- LOGIKA PENARIKAN SALDO YANG DINAMIS ---
         text_input = msg_obj.text or ""
-        
-        # Ekstrak angka dari teks input (khusus baris Total Withdraw)
         requested_amount = 0
         match = re.search(r"Total Withdraw:\D*(\d+[\d\.]*)", text_input, re.IGNORECASE)
         if match:
-            # Hilangkan titik (format ribuan) dan ubah ke integer
             raw_amount = match.group(1).replace(".", "")
             if raw_amount.isdigit(): requested_amount = int(raw_amount)
         
-        # Cek saldo user di database
         res = db_query("SELECT balance FROM users WHERE id=?", (u.id,), fetchone=True)
         current_balance = res[0] if res else 0
+        if requested_amount < 50000: return await context.bot.send_message(chat_id=cid, text="❌ <b>GAGAL:</b> Minimal penarikan adalah Rp50.000!")
+        if requested_amount > current_balance: return await context.bot.send_message(chat_id=cid, text=f"❌ <b>GAGAL:</b> Saldo Anda tidak cukup!\nSaldo Anda: Rp{current_balance:,}")
         
-        if requested_amount < 50000:
-            return await msg_obj.reply_text("❌ <b>GAGAL:</b> Minimal penarikan adalah Rp50.000!")
-        
-        if requested_amount > current_balance:
-            return await msg_obj.reply_text(f"❌ <b>GAGAL:</b> Saldo Anda tidak cukup!\nSaldo Anda: Rp{current_balance:,}\nPermintaan: Rp{requested_amount:,}")
-        
-        # Potong saldo sesuai permintaan, bukan semuanya!
         db_query("UPDATE users SET balance = balance - ? WHERE id = ?", (requested_amount, u.id), commit=True)
-        
         report = (f"💰 <b>PENGAJUAN WITHDRAW</b>\nUser: {u.mention_html()}\nWD_ID: {u.id}\n"
-                  f"Saldo Awal: Rp{current_balance:,}\n"
-                  f"Ditarik: Rp{requested_amount:,}\n"
-                  f"Sisa Saldo: Rp{current_balance - requested_amount:,}\n\n"
-                  f"Data:\n{text_input}")
-                  
+                  f"Ditarik: Rp{requested_amount:,}\nSisa Saldo: Rp{current_balance - requested_amount:,}\n\nData:\n{text_input}")
         await context.bot.send_message(OWNER_ID, report, parse_mode=ParseMode.HTML)
         context.user_data.clear()
-        return await msg_obj.reply_text(f"✅ <b>Berhasil!</b>\nPenarikan Rp{requested_amount:,} telah diajukan kepada Owner.\nMohon tunggu dalam waktu 1×24 jam.")
+        return await context.bot.send_message(chat_id=cid, text=f"✅ <b>Berhasil!</b>\nPenarikan Rp{requested_amount:,} diajukan.\nMohon tunggu dalam 1×24 jam.")
 
     if 'editing' in context.user_data and is_owner(u.id):
-        set_setting(context.user_data['editing'], msg_obj.text); context.user_data.clear(); return await msg_obj.reply_text("✅ Disimpan!")
+        set_setting(context.user_data['editing'], msg_obj.text); context.user_data.clear(); return await context.bot.send_message(chat_id=cid, text="✅ Disimpan!")
 
     if update.effective_chat.type == Chat.PRIVATE and u.id in SOLO_ROOMS:
         if not msg_obj.text: return
         solo = SOLO_ROOMS[u.id]; word = msg_obj.text.strip().lower(); _, min_l_solo, _ = get_level_info(solo['turn_count'])
-        if word in solo['used_words'] and datetime.now() < solo['used_words'][word]: return await msg_obj.reply_text("❌ Dipakai!")
+        if word in solo['used_words'] and datetime.now() < solo['used_words'][word]: return await context.bot.send_message(chat_id=cid, text="❌ Dipakai!")
         if word in BANNED_NAMES or word not in dictionary or not word.startswith(solo['suffix']) or len(word) < min_l_solo:
-            update_points(u.id, u.first_name, -1, solo['turn_count']); return await msg_obj.reply_text("❌ SALAH!")
+            update_points(u.id, u.first_name, -1, solo['turn_count']); return await context.bot.send_message(chat_id=cid, text="❌ SALAH!")
         solo['used_words'][word] = datetime.now() + timedelta(minutes=30); s_len = 3 if len(word) >= 5 else 2; solo['suffix'] = word[-s_len:]; solo['turn_count'] += 1; update_points(u.id, u.first_name, 1, solo['turn_count'])
-        return await msg_obj.reply_text(f"✅ BENAR!\nSambung: <b>{solo['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
+        return await context.bot.send_message(chat_id=cid, text=f"✅ BENAR!\nSambung: <b>{solo['suffix'].upper()}</b>", parse_mode=ParseMode.HTML)
 
     if not room or not room['active']: return
     if u.id != room['players'][room['turn']]: return
     if not msg_obj.reply_to_message or msg_obj.reply_to_message.from_user.id != context.bot.id: return
     if not msg_obj.text: return
     word = msg_obj.text.strip().lower(); tc = room['turn_count']; lvl_name, min_l, lvl_emo = get_level_info(tc)
-    
-    if word in room['used_words'] and datetime.now() < room['used_words'][word]: return await msg_obj.reply_text("❌ Sudah dipakai!")
-    
+    if word in room['used_words'] and datetime.now() < room['used_words'][word]: return await context.bot.send_message(chat_id=cid, text="❌ Sudah dipakai!")
     if word in BANNED_NAMES or len(word) < min_l or word not in dictionary or (room['suffix'] and not word.startswith(room['suffix'])):
-        update_points(u.id, u.first_name, -5, tc)
-        room['mistakes'][u.id] = room['mistakes'].get(u.id, 0) + 1
+        update_points(u.id, u.first_name, -5, tc); room['mistakes'][u.id] = room['mistakes'].get(u.id, 0) + 1
         if room['mistakes'][u.id] >= 3:
-            await msg_obj.reply_text(f"💀 {u.first_name} tereliminasi!"); room['players'].pop(room['turn'])
+            await context.bot.send_message(chat_id=cid, text=f"💀 {u.first_name} tereliminasi!"); room['players'].pop(room['turn'])
             if len(room['players']) < 2: return await finish_game(context, cid)
             room['turn'] %= len(room['players'])
-        else: await msg_obj.reply_text("❌ JAWABAN SALAH! (-5 Poin)"); room['turn'] = (room['turn'] + 1) % len(room['players'])
+        else: await context.bot.send_message(chat_id=cid, text="❌ JAWABAN SALAH! (-5 Poin)"); room['turn'] = (room['turn'] + 1) % len(room['players'])
         return await next_turn_msg(context, cid)
-    
     room['used_words'][word] = datetime.now() + timedelta(minutes=30); s_len = 3 if len(word) >= 5 else 2; room['suffix'] = word[-s_len:]; room['turn_count'] += 1; room['turn'] = (room['turn'] + 1) % len(room['players']); update_points(u.id, u.first_name, 10, room['turn_count'])
-    await msg_obj.reply_text(f"✅ BENAR! +10 Poin."); await next_turn_msg(context, cid)
+    await context.bot.send_message(chat_id=cid, text=f"✅ BENAR! +10 Poin."); await next_turn_msg(context, cid)
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -587,7 +586,7 @@ def main():
     app.add_handler(CommandHandler("bcgroup", broadcast_cmd))
     app.add_handler(CallbackQueryHandler(cb_logic))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.Sticker.ALL, handle_all))
+    app.add_handler(MessageHandler((filters.PHOTO | filters.Document.ALL | filters.Sticker.ALL) & ~filters.COMMAND, handle_all))
     app.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_error_handler(error_handler)
     print(">>> BOT PROFESSIONAL ONLINE <<<"); app.run_polling()
