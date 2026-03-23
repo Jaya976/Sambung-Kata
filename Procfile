@@ -1,3 +1,1 @@
-worker: python kata.py
-backup: python backup.py
-
+worker: python backup.py
